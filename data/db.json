@@ -1,0 +1,11 @@
+{
+  "users": [
+    {
+      "id": "usr-admin-1",
+      "email": "admin@zenrunway.io",
+      "passwordHash": "$2b$10$6zhcEReMamt3DWU4LuHM0.bQXw06QNgSuTmxvV0pJ.SWt4Bw/3mL6",
+      "createdAt": "2026-08-30T14:55:48.703Z"
+    }
+  ],
+  "resetTokens": []
+}

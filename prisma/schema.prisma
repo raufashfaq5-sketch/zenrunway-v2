@@ -1,0 +1,32 @@
+// Prisma Schema for ZenRunway v2 Financial SaaS Engine
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Transaction {
+  id             String   @id @default(uuid())
+  description    String
+  amount         Float    // Baseline amount in USD floating point number
+  type           String   // 'income' | 'spend'
+  status         String   // 'received' | 'paid' | 'pending'
+  dueDate        String   // ISO format YYYY-MM-DD
+  category       String   // Category tag e.g. Retainer, Project, Infrastructure
+  clientEmail    String?  // Mandatory for income invoices
+  isSubscription Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
