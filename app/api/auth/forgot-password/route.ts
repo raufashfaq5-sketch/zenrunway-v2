@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       });
 
       const mailOptions = {
-        from: `"ZenRunway Security" <no-reply@zenrunway.io>`,
+        from: 'ZenRunway <onboarding@resend.dev>',
         to: user.email,
         subject: "SECURITY ALERT: Reset Your ZenRunway Password",
         text: `You requested a password reset for your ZenRunway Financial Engine account.\n\nClick the link below to set a new password (link expires in 15 minutes):\n\n${resetUrl}\n\nIf you did not request this reset, please ignore this email.`,
