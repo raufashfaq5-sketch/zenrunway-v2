@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { findUserByEmail, saveResetToken } from "@/lib/db";
 import { signJwtToken } from "@/lib/auth";
 import { sanitizeEmail } from "@/lib/sanitizer";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,25 +32,15 @@ export async function POST(req: NextRequest) {
     const origin = req.headers.get("origin") || "http://localhost:3000";
     const resetUrl = `${origin}/?resetToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(user.email)}`;
 
-    // Dispatch recovery email via Nodemailer
+    // Dispatch recovery email via Resend
     try {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || "smtp.ethereal.email",
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER || "demo@ethereal.email",
-          pass: process.env.SMTP_PASS || "demo123",
-        },
-      });
-
-      const mailOptions = {
-        from: 'ZenRunway <onboarding@resend.dev>',
+      const { data, error } = await resend.emails.send({
+        from: "onboarding@resend.dev",
         to: user.email,
         subject: "SECURITY ALERT: Reset Your ZenRunway Password",
         text: `You requested a password reset for your ZenRunway Financial Engine account.\n\nClick the link below to set a new password (link expires in 15 minutes):\n\n${resetUrl}\n\nIf you did not request this reset, please ignore this email.`,
         html: `
-          <div style="font-family: Arial, sans-serif; background-color: #0B0F17; color: #F8FAFC; padding: 24px; borderRadius: 12px;">
+          <div style="font-family: Arial, sans-serif; background-color: #0B0F17; color: #F8FAFC; padding: 24px; border-radius: 12px;">
             <h2 style="color: #10B981; margin-top: 0;">ZenRunway Security Alert</h2>
             <p>You requested a password reset for your ZenRunway Financial Engine account.</p>
             <p style="margin: 20px 0;">
@@ -62,11 +54,21 @@ export async function POST(req: NextRequest) {
             <p style="font-size: 11px; color: #64748B;">This link is time-limited and expires in 15 minutes. If you did not request a password reset, no action is required.</p>
           </div>
         `,
-      };
+      });
 
-      await transporter.sendMail(mailOptions);
-    } catch (mailErr) {
-      console.warn("Nodemailer dispatch fallback note (SMTP unconfigured in dev):", mailErr);
+      if (error) {
+        console.error("Resend Error:", error);
+        return NextResponse.json(
+          { error: error.message || "Failed to send email via Resend." },
+          { status: 500 }
+        );
+      }
+    } catch (error) {
+      console.error("Resend Error:", error);
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Failed to send email via Resend." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
@@ -80,3 +82,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Server error initiating password reset." }, { status: 500 });
   }
 }
+
