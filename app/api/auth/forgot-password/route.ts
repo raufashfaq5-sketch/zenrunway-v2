@@ -4,8 +4,6 @@ import { signJwtToken } from "@/lib/auth";
 import { sanitizeEmail } from "@/lib/sanitizer";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -16,8 +14,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
+    if (!process.env.RESEND_API_KEY) {
+      console.error("RESEND EXECUTION ERROR: process.env.RESEND_API_KEY is undefined");
+      return NextResponse.json(
+        { error: "RESEND_API_KEY is undefined in environment variables." },
+        { status: 500 }
+      );
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
     const user = findUserByEmail(cleanEmail);
-    // Security Best Practice: Don't leak if email exists or not, but generate token if exists
     if (!user) {
       return NextResponse.json({
         success: true,
@@ -32,9 +39,11 @@ export async function POST(req: NextRequest) {
     const origin = req.headers.get("origin") || "http://localhost:3000";
     const resetUrl = `${origin}/?resetToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(user.email)}`;
 
-    // Dispatch recovery email via Resend
+    console.log("BEFORE RESEND EMAIL SEND: Initiating email dispatch to", user.email);
+
+    let data, error;
     try {
-      const { data, error } = await resend.emails.send({
+      const resendResponse = await resend.emails.send({
         from: "onboarding@resend.dev",
         to: user.email,
         subject: "SECURITY ALERT: Reset Your ZenRunway Password",
@@ -55,18 +64,30 @@ export async function POST(req: NextRequest) {
           </div>
         `,
       });
-
-      if (error) {
-        console.error("Resend Error:", error);
-        return NextResponse.json(
-          { error: error.message || "Failed to send email via Resend." },
-          { status: 500 }
-        );
-      }
-    } catch (error) {
-      console.error("Resend Error:", error);
+      data = resendResponse.data;
+      error = resendResponse.error;
+      console.log("AFTER RESEND EMAIL SEND: Resend response received:", { data, error });
+    } catch (catchErr: any) {
+      console.error("RESEND EXECUTION ERROR:", catchErr);
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : "Failed to send email via Resend." },
+        { error: catchErr?.message || "Failed to send email via Resend." },
+        { status: 500 }
+      );
+    }
+
+    if (error) {
+      console.error("RESEND EXECUTION ERROR:", error);
+      return NextResponse.json(
+        { error: error.message || "Failed to send email via Resend." },
+        { status: 500 }
+      );
+    }
+
+    if (!data?.id) {
+      const missingIdError = { message: "Resend did not return a valid email ID." };
+      console.error("RESEND EXECUTION ERROR:", missingIdError);
+      return NextResponse.json(
+        { error: missingIdError.message },
         { status: 500 }
       );
     }
@@ -74,12 +95,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Password reset link generated and dispatched to registered email.",
-      resetUrl, // Provided for easy manual testing / link clicking
+      id: data.id,
+      resetUrl,
       resetToken,
-    });
+    }, { status: 200 });
   } catch (err: unknown) {
     console.error("Forgot password error:", err);
     return NextResponse.json({ error: "Server error initiating password reset." }, { status: 500 });
   }
 }
+
 
