@@ -16,7 +16,7 @@ import {
   EyeOff,
 } from "lucide-react";
 
-export type AuthTab = "login" | "signup" | "forgot" | "reset";
+export type AuthTab = "login" | "signup" | "forgot" | "otp" | "reset";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -42,6 +42,7 @@ export default function AuthModal({
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [resetToken, setResetToken] = useState<string>(initialResetToken);
+  const [otp, setOtp] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -172,12 +173,43 @@ export default function AuthModal({
 
       const data = await parseResponseSafely(res, "Password reset request failed.");
 
-      setSuccessMsg("Password reset email dispatched successfully!");
+      setSuccessMsg("Verification code dispatched to your email!");
+      if (data.otp) {
+        setOtp(data.otp);
+      }
       if (data.resetUrl) {
         setDemoResetUrl(data.resetUrl);
       }
+      // AUTOMATICALLY SWITCH UI STATE FROM EMAIL FORM TO OTP CODE INPUT SCREEN
+      setActiveTab("otp");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Password reset failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+      });
+
+      const data = await parseResponseSafely(res, "OTP verification failed.");
+
+      setSuccessMsg("Code verified! Set your new password below.");
+      setResetToken(otp);
+      // AUTOMATICALLY SWITCH UI STATE TO RESET PASSWORD SCREEN
+      setActiveTab("reset");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Invalid or expired verification code.");
     } finally {
       setLoading(false);
     }
@@ -199,7 +231,7 @@ export default function AuthModal({
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, newPassword: password }),
+        body: JSON.stringify({ token: resetToken || otp, otp, email, newPassword: password }),
       });
 
       await parseResponseSafely(res, "Password reset failed.");
@@ -496,7 +528,7 @@ export default function AuthModal({
           {activeTab === "forgot" && (
             <form onSubmit={handleForgotSubmit} className="space-y-4">
               <div className="text-xs text-slate-400 mb-2">
-                Enter your registered email address below. We will send a secure, time-limited JWT reset token link directly to your inbox.
+                Enter your registered email address below. We will send a 6-digit verification code directly to your inbox.
               </div>
 
               <div>
@@ -520,27 +552,6 @@ export default function AuthModal({
                 </div>
               </div>
 
-              {demoResetUrl && (
-                <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                    Reset Token Link Generated:
-                  </div>
-                  <a
-                    href={demoResetUrl}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const urlObj = new URL(demoResetUrl);
-                      setResetToken(urlObj.searchParams.get("resetToken") || "");
-                      setActiveTab("reset");
-                    }}
-                    className="underline text-emerald-400 font-mono text-[11px] break-all hover:text-emerald-300 block"
-                  >
-                    Click to Open Reset Password View
-                  </a>
-                </div>
-              )}
-
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
@@ -558,7 +569,60 @@ export default function AuthModal({
                   disabled={loading}
                   className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Send Reset Email"}
+                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Send Code"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* OTP CODE INPUT VIEW */}
+          {activeTab === "otp" && (
+            <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
+              <div className="text-xs text-slate-400 mb-2">
+                We sent a 6-digit verification code to <span className="font-semibold text-emerald-400">{email}</span>. Enter the code below to verify:
+              </div>
+
+              <div>
+                <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                  6-Digit Verification Code
+                </label>
+                <div className="relative">
+                  <KeyRound className={`w-4 h-4 absolute left-3 top-3 ${isDark ? "text-slate-500" : "text-slate-400"}`} />
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    pattern="[0-9]*"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    placeholder="123456"
+                    className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-lg font-mono tracking-widest text-center border outline-none transition-all ${
+                      isDark
+                        ? "bg-[#182030] border-slate-700 text-emerald-400 focus:border-emerald-500"
+                        : "bg-slate-50 border-slate-200 text-emerald-600 focus:border-emerald-500"
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab("forgot"); setErrorMsg(null); setSuccessMsg(null); }}
+                  className={`flex-1 py-3 px-4 rounded-xl border font-semibold text-sm transition-all ${
+                    isDark
+                      ? "border-slate-700 hover:bg-slate-800 text-slate-300"
+                      : "border-slate-200 hover:bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !otp.trim()}
+                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Verify Code"}
                 </button>
               </div>
             </form>
@@ -568,26 +632,28 @@ export default function AuthModal({
           {activeTab === "reset" && (
             <form onSubmit={handleResetSubmit} className="space-y-4">
               <div className="text-xs text-slate-400 mb-2">
-                Enter your new secure password below to complete password recovery.
+                Verification code accepted! Enter your new password below.
               </div>
 
-              <div>
-                <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-                  Reset Token
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={resetToken}
-                  onChange={(e) => setResetToken(e.target.value)}
-                  placeholder="Paste JWT Reset Token"
-                  className={`w-full px-3 py-2.5 rounded-xl text-xs font-mono border outline-none transition-all ${
-                    isDark
-                      ? "bg-[#182030] border-slate-700 text-emerald-400"
-                      : "bg-slate-50 border-slate-200 text-emerald-600"
-                  }`}
-                />
-              </div>
+              {!(resetToken || otp) && (
+                <div>
+                  <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    Verification Code / Reset Token
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={resetToken}
+                    onChange={(e) => setResetToken(e.target.value)}
+                    placeholder="Enter 6-digit code or token"
+                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-mono border outline-none transition-all ${
+                      isDark
+                        ? "bg-[#182030] border-slate-700 text-emerald-400"
+                        : "bg-slate-50 border-slate-200 text-emerald-600"
+                    }`}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
@@ -607,6 +673,13 @@ export default function AuthModal({
                         : "bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500"
                     }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className={`absolute right-3 top-3 ${isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
