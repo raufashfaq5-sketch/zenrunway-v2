@@ -1,11 +1,13 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "zenrunway_super_secure_jwt_secret_key_2026";
+export const JWT_SECRET =
+  process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || "zenrunway-secret-key-2026";
+
 export const AUTH_COOKIE_NAME = "zenrunway_auth_token";
 
 export interface TokenPayload {
-  userId: string;
+  userId?: string;
   email: string;
   iat?: number;
   exp?: number;
@@ -20,7 +22,10 @@ export async function comparePassword(password: string, hash: string): Promise<b
   return bcrypt.compare(password, hash);
 }
 
-export function signJwtToken(payload: Omit<TokenPayload, "iat" | "exp">, expiresIn: string = "7d"): string {
+export function signJwtToken(
+  payload: { email: string; userId?: string; [key: string]: any },
+  expiresIn: string = "1h"
+): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn as jwt.SignOptions["expiresIn"] });
 }
 

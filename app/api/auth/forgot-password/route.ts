@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { signJwtToken } from "@/lib/auth";
+import jwt from "jsonwebtoken";
 import { saveResetToken, findUserByEmail } from "@/lib/db";
+
+const JWT_SECRET =
+  process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || "zenrunway-secret-key-2026";
 
 export async function POST(req: Request) {
   try {
@@ -19,12 +22,17 @@ export async function POST(req: Request) {
 
     const resend = new Resend(apiKey);
 
-    // Generate secure time-limited JWT reset token & save to database
+    // Generate a valid JWT token signed with fallback secret key (expires in 1h, payload includes { email })
     const user = findUserByEmail(email);
-    const resetToken = signJwtToken({ userId: user?.id || "usr-reset", email }, "15m");
-    saveResetToken(email, resetToken, 15 * 60 * 1000);
+    const resetToken = jwt.sign({ email, userId: user?.id || "usr-reset" }, JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
-    const resetLink = `https://zenrunway-v2-zenway1.vercel.app/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
+    saveResetToken(email, resetToken, 60 * 60 * 1000);
+
+    const resetLink = `https://zenrunway-v2-zenway1.vercel.app/reset-password?token=${encodeURIComponent(
+      resetToken
+    )}&email=${encodeURIComponent(email)}`;
 
     console.log("Attempting to send email via Resend to:", email, "with link:", resetLink);
 
@@ -45,7 +53,7 @@ export async function POST(req: Request) {
     }
 
     console.log("RESEND SUCCESS:", data);
-    return NextResponse.json({ success: true, id: data?.id, resetToken, resetLink });
+    return NextResponse.json({ success: true, id: data?.id, token: resetToken, resetToken });
   } catch (err: any) {
     console.error("UNHANDLED FORGOT PASSWORD ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
