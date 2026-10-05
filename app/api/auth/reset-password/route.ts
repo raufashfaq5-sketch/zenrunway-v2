@@ -10,10 +10,14 @@ const JWT_SECRET =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { token, newPassword } = body;
+    const { token, otp, code, newPassword, email } = body;
+    const otpOrToken = (token || otp || code || "").toString().trim();
 
-    if (!token) {
-      return NextResponse.json({ error: "Reset token is required." }, { status: 400 });
+    if (!otpOrToken) {
+      return NextResponse.json(
+        { error: "Verification code or reset token is required." },
+        { status: 400 }
+      );
     }
 
     const passCheck = validatePasswordStrength(newPassword || "");
@@ -21,18 +25,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: passCheck.error }, { status: 400 });
     }
 
-    // Verify incoming JWT token using exact fallback secret key
-    let decoded: any = null;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (jwtErr) {
-      console.error("JWT verification error:", jwtErr);
-      return NextResponse.json({ error: "Invalid or expired password reset token." }, { status: 400 });
+    let targetEmail: string | undefined = email;
+
+    // 1. Check 6-digit OTP in db store
+    const dbVerification = verifyResetToken(otpOrToken);
+    if (dbVerification.valid && dbVerification.email) {
+      targetEmail = dbVerification.email;
+    } else {
+      // 2. Fallback check as JWT token
+      try {
+        const decoded: any = jwt.verify(otpOrToken, JWT_SECRET);
+        if (decoded?.email) {
+          targetEmail = decoded.email;
+        }
+      } catch {
+        if (!targetEmail) {
+          return NextResponse.json(
+            { error: "Invalid or expired 6-digit verification code." },
+            { status: 400 }
+          );
+        }
+      }
     }
 
-    const targetEmail = decoded?.email;
     if (!targetEmail) {
-      return NextResponse.json({ error: "Invalid token payload: email missing." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Could not identify email address for password reset." },
+        { status: 400 }
+      );
     }
 
     // Hash new password
@@ -45,14 +65,14 @@ export async function POST(req: NextRequest) {
         data: { passwordHash: newPasswordHash },
       });
     } catch (prismaErr) {
-      console.warn("Prisma user update skipped or failed (fallback db will be updated):", prismaErr);
+      console.warn("Prisma user update skipped/failed (fallback db will be updated):", prismaErr);
     }
 
     // Update user password in db.json fallback store
     updateUserPassword(targetEmail, newPasswordHash);
 
-    // Consume the token if recorded
-    consumeResetToken(token);
+    // Consume the token / OTP code
+    consumeResetToken(otpOrToken);
 
     return NextResponse.json({
       success: true,
