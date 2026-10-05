@@ -162,13 +162,13 @@ export default function AuthModal({
     setLoading(true);
 
     try {
-      console.log("Submitting reset email to:", email);
+      console.log("BEFORE FETCH: Sending forgot password request for email:", email);
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      console.log("API Response:", res);
+      console.log("AFTER FETCH: Forgot password API response received:", res);
 
       const data = await parseResponseSafely(res, "Password reset request failed.");
 

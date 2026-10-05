@@ -2,6 +2,8 @@
 
 import { sanitizeInput, sanitizeEmail } from "@/lib/sanitizer";
 import { prisma } from "@/lib/prisma";
+import { PrismaClientInitializationError } from "@prisma/client/runtime/library";
+import { Prisma } from "@prisma/client";
 
 export interface TransactionItem {
   id: string;
@@ -234,9 +236,18 @@ export async function calculateFinancialMetricsAction(
  */
 export async function getTransactionsAction(): Promise<TransactionItem[]> {
   try {
-    const dbTx = await prisma.transaction.findMany({
+    const dbQueryPromise = prisma.transaction.findMany({
       orderBy: { createdAt: "desc" },
     });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new PrismaClientInitializationError("Database connection timed out after 2 seconds", "2.0.0")),
+        2000
+      )
+    );
+
+    const dbTx = await Promise.race([dbQueryPromise, timeoutPromise]);
 
     if (dbTx && dbTx.length > 0) {
       return (dbTx as any[]).map((t: any) => ({
@@ -251,8 +262,16 @@ export async function getTransactionsAction(): Promise<TransactionItem[]> {
         isSubscription: t.isSubscription,
       }));
     }
-  } catch (err) {
-    console.warn("Prisma query failed/uninitialized, returning demo transactions fallback:", err);
+  } catch (err: unknown) {
+    if (
+      err instanceof PrismaClientInitializationError ||
+      err instanceof Prisma.PrismaClientInitializationError ||
+      (err as any)?.name === "PrismaClientInitializationError"
+    ) {
+      console.warn("PrismaClientInitializationError caught smoothly (DB unreachable), returning fallback seed array:", (err as Error).message);
+    } else {
+      console.warn("Prisma query failed/uninitialized, returning demo transactions fallback:", err);
+    }
   }
 
   return DEFAULT_TRANSACTIONS_SEED;
