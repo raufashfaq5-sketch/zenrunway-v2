@@ -10,6 +10,7 @@ function ResetPasswordForm() {
   const router = useRouter();
 
   const [token, setToken] = useState<string>("");
+  const [hasTokenInUrl, setHasTokenInUrl] = useState<boolean>(false);
   const [newPassword, setNewPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
@@ -17,9 +18,10 @@ function ResetPasswordForm() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const tokenParam = searchParams.get("resetToken") || searchParams.get("token");
+    const tokenParam = searchParams.get("token") || searchParams.get("resetToken");
     if (tokenParam) {
       setToken(tokenParam);
+      setHasTokenInUrl(true);
     }
   }, [searchParams]);
 
@@ -27,6 +29,11 @@ function ResetPasswordForm() {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    if (!token) {
+      setErrorMsg("Reset token is required.");
+      return;
+    }
 
     if (newPassword !== confirmPassword) {
       setErrorMsg("Passwords do not match.");
@@ -87,17 +94,21 @@ function ResetPasswordForm() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium mb-1.5 text-slate-300">Reset Token</label>
-            <input
-              type="text"
-              required
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Paste or enter reset token"
-              className="w-full px-3 py-2.5 rounded-xl text-xs font-mono bg-[#182030] border border-slate-700 text-emerald-400 outline-none focus:border-emerald-500 transition-all"
-            />
-          </div>
+          {hasTokenInUrl ? (
+            <input type="hidden" name="token" value={token} />
+          ) : (
+            <div>
+              <label className="block text-xs font-medium mb-1.5 text-slate-300">Reset Token</label>
+              <input
+                type="text"
+                required
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Paste or enter reset token"
+                className="w-full px-3 py-2.5 rounded-xl text-xs font-mono bg-[#182030] border border-slate-700 text-emerald-400 outline-none focus:border-emerald-500 transition-all"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium mb-1.5 text-slate-300">New Password</label>
