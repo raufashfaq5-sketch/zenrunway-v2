@@ -174,10 +174,17 @@ export default function AuthModal({
 
       const data = await parseResponseSafely(res, "Password reset request failed.");
 
-      setSuccessMsg("Verification code dispatched to your email!");
-      if (data.token) {
-        setOtpToken(data.token);
+      if (!data.token) {
+        throw new Error("Server did not return a session token. Please try again.");
       }
+
+      // Persist token in both React state AND sessionStorage.
+      // sessionStorage gives a synchronous fallback in case the OTP form
+      // renders before the setState flush completes.
+      setOtpToken(data.token);
+      try { sessionStorage.setItem("otp_token", data.token); } catch {}
+
+      setSuccessMsg("Verification code dispatched to your email!");
       if (data.resetUrl) {
         setDemoResetUrl(data.resetUrl);
       }
@@ -197,13 +204,27 @@ export default function AuthModal({
     setLoading(true);
 
     try {
+      // Resolve token: prefer React state, fall back to sessionStorage
+      // (handles the case where setState hasn't flushed yet)
+      let resolvedToken = otpToken;
+      if (!resolvedToken) {
+        try { resolvedToken = sessionStorage.getItem("otp_token") || ""; } catch {}
+      }
+
+      if (!resolvedToken) {
+        throw new Error("Session expired or missing. Please go back and request a new code.");
+      }
+
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, userCode: otp, token: otpToken }),
+        body: JSON.stringify({ email, userCode: otp, token: resolvedToken }),
       });
 
       const data = await parseResponseSafely(res, "OTP verification failed.");
+
+      // Clean up session storage after successful verification
+      try { sessionStorage.removeItem("otp_token"); } catch {}
 
       setSuccessMsg("Code verified! Set your new password below.");
       setResetToken(otp);
