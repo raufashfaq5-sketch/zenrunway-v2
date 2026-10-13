@@ -43,6 +43,7 @@ export default function AuthModal({
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [resetToken, setResetToken] = useState<string>(initialResetToken);
   const [otp, setOtp] = useState<string>("");
+  const [otpToken, setOtpToken] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
@@ -174,8 +175,8 @@ export default function AuthModal({
       const data = await parseResponseSafely(res, "Password reset request failed.");
 
       setSuccessMsg("Verification code dispatched to your email!");
-      if (data.otp) {
-        setOtp(data.otp);
+      if (data.token) {
+        setOtpToken(data.token);
       }
       if (data.resetUrl) {
         setDemoResetUrl(data.resetUrl);
@@ -199,7 +200,7 @@ export default function AuthModal({
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
+        body: JSON.stringify({ email, userCode: otp, token: otpToken }),
       });
 
       const data = await parseResponseSafely(res, "OTP verification failed.");
