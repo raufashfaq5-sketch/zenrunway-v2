@@ -55,13 +55,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Hash new password
+    // Normalize email before any DB writes so the stored record matches login lookups
+    const normalizedEmail = targetEmail.trim().toLowerCase();
+
+    // Hash new password with bcrypt (saltRounds = 10, via hashPassword in lib/auth)
     const newPasswordHash = await hashPassword(newPassword);
 
     // Update user password in Prisma database if present
     try {
       await prisma.user.update({
-        where: { email: targetEmail.toLowerCase() },
+        where: { email: normalizedEmail },
         data: { passwordHash: newPasswordHash },
       });
     } catch (prismaErr) {
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Update user password in db.json fallback store
-    updateUserPassword(targetEmail, newPasswordHash);
+    updateUserPassword(normalizedEmail, newPasswordHash);
 
     // Consume the token / OTP code
     consumeResetToken(otpOrToken);
