@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { verifyResetToken, consumeResetToken, updateUserPassword } from "@/lib/db";
-import { hashPassword, validatePasswordStrength } from "@/lib/auth";
+import { validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const JWT_SECRET =
@@ -55,11 +56,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Normalize email before any DB writes so the stored record matches login lookups
-    const normalizedEmail = targetEmail.trim().toLowerCase();
+    // Normalize email before any DB writes — matches how signup stores the email
+    const normalizedEmail = (targetEmail as string).trim().toLowerCase();
 
-    // Hash new password with bcrypt (saltRounds = 10, via hashPassword in lib/auth)
-    const newPasswordHash = await hashPassword(newPassword);
+    // Hash new password directly with bcrypt (saltRounds = 10)
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
 
     // Update user password in Prisma database if present
     try {

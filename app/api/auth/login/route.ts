@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { findUserByEmail } from "@/lib/db";
-import { comparePassword, signJwtToken, AUTH_COOKIE_NAME } from "@/lib/auth";
-import { sanitizeEmail } from "@/lib/sanitizer";
+import { signJwtToken, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = body || {};
 
-    const cleanEmail = sanitizeEmail(email || "");
-    if (!cleanEmail) {
+    const cleanEmail = (email || "").trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     let isMatch = false;
     if (user.passwordHash) {
       try {
-        isMatch = await comparePassword(password, user.passwordHash);
+        isMatch = await bcrypt.compare(password, user.passwordHash);
       } catch (err) {
         console.warn("Bcrypt comparison error, checking default fallback:", err);
       }
