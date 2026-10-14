@@ -45,6 +45,8 @@ export default function AuthModal({
   const [otp, setOtp] = useState<string>("");
   const [otpToken, setOtpToken] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+  const [resetSuccess, setResetSuccess] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -247,24 +249,39 @@ export default function AuthModal({
       return;
     }
 
+    if (password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters.");
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // token is the verified OTP code (set during OTP verification step)
+      const token = resetToken || otp;
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken || otp, otp, email, newPassword: password }),
+        body: JSON.stringify({ email, newPassword: password, token }),
       });
 
       await parseResponseSafely(res, "Password reset failed.");
 
-      setSuccessMsg("Password reset successfully! Redirecting to login...");
+      // Show the success confirmation state
+      setResetSuccess(true);
+      setSuccessMsg("Password updated successfully! You can now log in with your new password.");
+
+      // Redirect to login after 2 seconds
       setTimeout(() => {
+        setResetSuccess(false);
         setActiveTab("login");
         setPassword("");
         setConfirmPassword("");
+        setOtp("");
+        setResetToken("");
         setSuccessMsg(null);
-      }, 1500);
+        setErrorMsg(null);
+      }, 2000);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Password reset failed.");
     } finally {
@@ -653,30 +670,17 @@ export default function AuthModal({
           {/* RESET PASSWORD VIEW */}
           {activeTab === "reset" && (
             <form onSubmit={handleResetSubmit} className="space-y-4">
-              <div className="text-xs text-slate-400 mb-2">
-                Verification code accepted! Enter your new password below.
+              {/* Step indicator */}
+              <div className={`flex items-center gap-2 p-3 rounded-xl border ${
+                isDark ? "bg-emerald-500/5 border-emerald-500/20" : "bg-emerald-50 border-emerald-200"
+              }`}>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                <p className="text-xs text-emerald-500 font-medium">
+                  Identity verified — set your new password below.
+                </p>
               </div>
 
-              {!(resetToken || otp) && (
-                <div>
-                  <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-                    Verification Code / Reset Token
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={resetToken}
-                    onChange={(e) => setResetToken(e.target.value)}
-                    placeholder="Enter 6-digit code or token"
-                    className={`w-full px-3 py-2.5 rounded-xl text-xs font-mono border outline-none transition-all ${
-                      isDark
-                        ? "bg-[#182030] border-slate-700 text-emerald-400"
-                        : "bg-slate-50 border-slate-200 text-emerald-600"
-                    }`}
-                  />
-                </div>
-              )}
-
+              {/* New Password */}
               <div>
                 <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
                   New Password
@@ -684,15 +688,18 @@ export default function AuthModal({
                 <div className="relative">
                   <Lock className={`w-4 h-4 absolute left-3 top-3 ${isDark ? "text-slate-500" : "text-slate-400"}`} />
                   <input
+                    id="reset-new-password"
                     type={showPassword ? "text" : "password"}
                     required
+                    autoFocus
+                    disabled={resetSuccess}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Min 8 chars with uppercase & symbol"
                     className={`w-full pl-9 pr-10 py-2.5 rounded-xl text-sm border outline-none transition-all ${
                       isDark
-                        ? "bg-[#182030] border-slate-700 text-slate-100 focus:border-emerald-500"
-                        : "bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500"
+                        ? "bg-[#182030] border-slate-700 text-slate-100 focus:border-emerald-500 disabled:opacity-50"
+                        : "bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500 disabled:opacity-50"
                     }`}
                   />
                   <button
@@ -705,47 +712,93 @@ export default function AuthModal({
                 </div>
               </div>
 
+              {/* Confirm Password */}
               <div>
                 <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-                  Confirm New Password
+                  Confirm Password
                 </label>
                 <div className="relative">
                   <KeyRound className={`w-4 h-4 absolute left-3 top-3 ${isDark ? "text-slate-500" : "text-slate-400"}`} />
                   <input
-                    type={showPassword ? "text" : "password"}
+                    id="reset-confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
                     required
+                    disabled={resetSuccess}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repeat new password"
-                    className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border outline-none transition-all ${
-                      isDark
-                        ? "bg-[#182030] border-slate-700 text-slate-100 focus:border-emerald-500"
-                        : "bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500"
+                    className={`w-full pl-9 pr-10 py-2.5 rounded-xl text-sm border outline-none transition-all ${
+                      confirmPassword && password !== confirmPassword
+                        ? isDark
+                          ? "bg-[#182030] border-rose-500/60 text-slate-100 focus:border-rose-500"
+                          : "bg-slate-50 border-rose-400 text-slate-900 focus:border-rose-400"
+                        : isDark
+                        ? "bg-[#182030] border-slate-700 text-slate-100 focus:border-emerald-500 disabled:opacity-50"
+                        : "bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500 disabled:opacity-50"
                     }`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className={`absolute right-3 top-3 ${isDark ? "text-slate-400 hover:text-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
+                {/* Inline mismatch hint */}
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="mt-1 text-[10px] text-rose-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Passwords do not match
+                  </p>
+                )}
               </div>
 
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab("login"); setErrorMsg(null); setSuccessMsg(null); }}
-                  className={`flex-1 py-3 px-4 rounded-xl border font-semibold text-sm transition-all ${
-                    isDark
-                      ? "border-slate-700 hover:bg-slate-800 text-slate-300"
-                      : "border-slate-200 hover:bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
-                >
-                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Save New Password"}
-                </button>
-              </div>
+              {/* Success confirmation overlay */}
+              {resetSuccess && (
+                <div className="flex flex-col items-center gap-3 py-4 animate-fadeIn">
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                    <CheckCircle2 className="w-7 h-7 text-white" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-emerald-400">Password Updated!</p>
+                    <p className={`text-xs mt-1 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                      Redirecting you to login…
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              {!resetSuccess && (
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab("login"); setErrorMsg(null); setSuccessMsg(null); setResetSuccess(false); }}
+                    className={`flex-1 py-3 px-4 rounded-xl border font-semibold text-sm transition-all ${
+                      isDark
+                        ? "border-slate-700 hover:bg-slate-800 text-slate-300"
+                        : "border-slate-200 hover:bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="update-password-btn"
+                    type="submit"
+                    disabled={loading || (!!confirmPassword && password !== confirmPassword)}
+                    className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {loading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <span>Update Password</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </form>
           )}
         </div>
