@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { findUserByEmail, createUser } from "@/lib/db";
-import { hashPassword, signJwtToken, validatePasswordStrength, AUTH_COOKIE_NAME } from "@/lib/auth";
-import { sanitizeEmail } from "@/lib/sanitizer";
+import { signJwtToken, validatePasswordStrength, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { email, password } = body;
 
-    const cleanEmail = sanitizeEmail(email || "");
-    if (!cleanEmail) {
+    const cleanEmail = (email || "").trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
@@ -20,10 +20,10 @@ export async function POST(req: NextRequest) {
 
     const existingUser = findUserByEmail(cleanEmail);
     if (existingUser) {
-      return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
+      return NextResponse.json({ error: "User already exists" }, { status: 400 });
     }
 
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await bcrypt.hash(password, 10);
     const user = createUser(cleanEmail, passwordHash);
 
     const token = signJwtToken({ userId: user.id, email: user.email });
