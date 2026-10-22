@@ -59,8 +59,11 @@ export async function POST(req: NextRequest) {
     // Normalize email before any DB writes — matches how signup stores the email
     const cleanEmail = (targetEmail as string).trim().toLowerCase();
 
+    // Normalize password input before hashing — must match login's trim()
+    const cleanPassword = newPassword.trim();
+
     // Hash new password using bcrypt (saltRounds = 10)
-    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    const newPasswordHash = await bcrypt.hash(cleanPassword, 10);
 
     // Update user password in Prisma database if present
     try {

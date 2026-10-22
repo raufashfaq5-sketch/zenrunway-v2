@@ -23,10 +23,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Password is required." }, { status: 400 });
     }
 
+    const cleanPassword = (password as string).trim();
+
     let user = findUserByEmail(cleanEmail);
 
     // Fallback for default admin credentials: admin@zenrunway.io / Password123!
-    if (!user && cleanEmail === "admin@zenrunway.io" && password === "Password123!") {
+    if (!user && cleanEmail === "admin@zenrunway.io" && cleanPassword === "Password123!") {
       user = {
         id: "usr-admin-1",
         email: "admin@zenrunway.io",
@@ -42,14 +44,14 @@ export async function POST(req: NextRequest) {
     let isMatch = false;
     if (user.passwordHash) {
       try {
-        isMatch = await bcrypt.compare(password, user.passwordHash);
+        isMatch = await bcrypt.compare(cleanPassword, user.passwordHash);
       } catch (err) {
         console.warn("Bcrypt comparison error, checking default fallback:", err);
       }
     }
 
     // Direct match fallback for default admin
-    if (!isMatch && cleanEmail === "admin@zenrunway.io" && password === "Password123!") {
+    if (!isMatch && cleanEmail === "admin@zenrunway.io" && cleanPassword === "Password123!") {
       isMatch = true;
     }
 
