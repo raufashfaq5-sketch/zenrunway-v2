@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { findUserByEmail } from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 import { signJwtToken, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -14,46 +14,29 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = body || {};
 
+    // Normalize inputs
     const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPassword = (password || "").trim();
+
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Please enter a valid email address." },
+        { status: 400 }
+      );
     }
 
-    if (!password) {
+    if (!cleanPassword) {
       return NextResponse.json({ error: "Password is required." }, { status: 400 });
     }
 
-    const cleanPassword = (password as string).trim();
-
-    let user = findUserByEmail(cleanEmail);
-
-    // Fallback for default admin credentials: admin@zenrunway.io / Password123!
-    if (!user && cleanEmail === "admin@zenrunway.io" && cleanPassword === "Password123!") {
-      user = {
-        id: "usr-admin-1",
-        email: "admin@zenrunway.io",
-        passwordHash: "",
-        createdAt: new Date().toISOString(),
-      };
-    }
+    // Look up user in Supabase PostgreSQL via Prisma
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
 
     if (!user) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
 
-    let isMatch = false;
-    if (user.passwordHash) {
-      try {
-        isMatch = await bcrypt.compare(cleanPassword, user.passwordHash);
-      } catch (err) {
-        console.warn("Bcrypt comparison error, checking default fallback:", err);
-      }
-    }
-
-    // Direct match fallback for default admin
-    if (!isMatch && cleanEmail === "admin@zenrunway.io" && cleanPassword === "Password123!") {
-      isMatch = true;
-    }
+    const isMatch = await bcrypt.compare(cleanPassword, user.passwordHash);
 
     if (!isMatch) {
       return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
@@ -83,6 +66,9 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err: unknown) {
     console.error("Login error:", err);
-    return NextResponse.json({ error: "Server error logging in. Please try again." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server error logging in. Please try again." },
+      { status: 500 }
+    );
   }
 }

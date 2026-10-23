@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import nodemailer from "nodemailer";
-import { getTransactionsAction } from "@/app/actions/financials";
 
 export async function GET(req: NextRequest) {
   return handleCronJob(req);
@@ -30,55 +29,26 @@ async function handleCronJob(req: NextRequest) {
     }
 
     const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-    let overdueInvoices: Array<{
-      id: string;
-      description: string;
-      amount: number;
-      dueDate: string;
-      clientEmail: string;
-      isSubscription?: boolean;
-    }> = [];
 
-    // Attempt Prisma Query
-    try {
-      const dbRecords = await prisma.transaction.findMany({
-        where: {
-          status: "pending",
-          dueDate: { lt: todayStr },
-          clientEmail: { not: null },
-        },
-      });
+    // Query overdue invoices directly from Supabase PostgreSQL via Prisma
+    const dbRecords = await prisma.transaction.findMany({
+      where: {
+        status: "pending",
+        dueDate: { lt: todayStr },
+        clientEmail: { not: null },
+      },
+    });
 
-      overdueInvoices = (dbRecords as any[])
-        .filter((t: any) => t.clientEmail && t.clientEmail.trim().length > 0)
-        .map((t: any) => ({
-          id: t.id,
-          description: t.description,
-          amount: t.amount,
-          dueDate: t.dueDate,
-          clientEmail: t.clientEmail!,
-          isSubscription: t.isSubscription,
-        }));
-    } catch (err) {
-      console.warn("Cron Prisma query fallback to server transactions dataset:", err);
-      const allTx = await getTransactionsAction();
-      overdueInvoices = allTx
-        .filter(
-          (t) =>
-            t.status === "pending" &&
-            new Date(t.dueDate) < new Date(todayStr) &&
-            t.clientEmail &&
-            t.clientEmail.trim().length > 0
-        )
-        .map((t) => ({
-          id: t.id,
-          description: t.description,
-          amount: t.amount,
-          dueDate: t.dueDate,
-          clientEmail: t.clientEmail!,
-          isSubscription: t.isSubscription,
-        }));
-    }
+    const overdueInvoices = (dbRecords as typeof dbRecords)
+      .filter((t) => t.clientEmail && t.clientEmail.trim().length > 0)
+      .map((t) => ({
+        id: t.id,
+        description: t.description,
+        amount: t.amount,
+        dueDate: t.dueDate,
+        clientEmail: t.clientEmail!,
+        isSubscription: t.isSubscription,
+      }));
 
     if (overdueInvoices.length === 0) {
       return NextResponse.json({
@@ -124,7 +94,7 @@ async function handleCronJob(req: NextRequest) {
         dispatchResults.push({ id: inv.id, email: inv.clientEmail, status: "sent" });
       } catch (sendErr) {
         console.warn(`Cron email send warning for invoice ${inv.id}:`, sendErr);
-        dispatchResults.push({ id: inv.id, email: inv.clientEmail, status: "logged_dev_fallback" });
+        dispatchResults.push({ id: inv.id, email: inv.clientEmail, status: "email_send_failed" });
       }
     }
 

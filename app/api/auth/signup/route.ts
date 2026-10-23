@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { findUserByEmail, createUser } from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 import { signJwtToken, validatePasswordStrength, AUTH_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -8,23 +8,36 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { email, password } = body;
 
+    // Normalize inputs
     const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPassword = (password || "").trim();
+
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Please enter a valid email address." },
+        { status: 400 }
+      );
     }
 
-    const passCheck = validatePasswordStrength(password || "");
+    const passCheck = validatePasswordStrength(cleanPassword);
     if (!passCheck.valid) {
       return NextResponse.json({ error: passCheck.error }, { status: 400 });
     }
 
-    const existingUser = findUserByEmail(cleanEmail);
-    if (existingUser) {
-      return NextResponse.json({ error: "User already exists" }, { status: 400 });
+    // Duplicate-email check against Supabase PostgreSQL
+    const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (existing) {
+      return NextResponse.json(
+        { error: "An account with this email already exists." },
+        { status: 400 }
+      );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const user = createUser(cleanEmail, passwordHash);
+    const passwordHash = await bcrypt.hash(cleanPassword, 10);
+
+    const user = await prisma.user.create({
+      data: { email: cleanEmail, passwordHash },
+    });
 
     const token = signJwtToken({ userId: user.id, email: user.email });
 
@@ -50,6 +63,9 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err: unknown) {
     console.error("Signup error:", err);
-    return NextResponse.json({ error: "Server error creating user account." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server error creating user account." },
+      { status: 500 }
+    );
   }
 }

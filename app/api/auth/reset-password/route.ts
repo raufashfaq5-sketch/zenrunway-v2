@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { verifyResetToken, consumeResetToken, updateUserPassword } from "@/lib/db";
-import { validatePasswordStrength } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { validatePasswordStrength } from "@/lib/auth";
 
 const JWT_SECRET =
   process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || "zenrunway-secret-key-2026";
@@ -21,31 +20,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate new password strength before doing any DB work
     const passCheck = validatePasswordStrength(newPassword || "");
     if (!passCheck.valid) {
       return NextResponse.json({ error: passCheck.error }, { status: 400 });
     }
 
+    // ── Resolve the target email from the JWT ─────────────────────────────────
+    // The forgot-password route embeds { email, code } in a signed JWT.
+    // Decode and verify it here — this is the authoritative identity check.
     let targetEmail: string | undefined = email;
 
-    // 1. Check 6-digit OTP in db store
-    const dbVerification = verifyResetToken(otpOrToken);
-    if (dbVerification.valid && dbVerification.email) {
-      targetEmail = dbVerification.email;
-    } else {
-      // 2. Fallback check as JWT token
-      try {
-        const decoded: any = jwt.verify(otpOrToken, JWT_SECRET);
-        if (decoded?.email) {
-          targetEmail = decoded.email;
-        }
-      } catch {
-        if (!targetEmail) {
-          return NextResponse.json(
-            { error: "Invalid or expired 6-digit verification code." },
-            { status: 400 }
-          );
-        }
+    try {
+      const decoded: any = jwt.verify(otpOrToken, JWT_SECRET);
+      if (decoded?.email) {
+        targetEmail = decoded.email;
+      }
+    } catch (jwtErr: any) {
+      // Only hard-fail if we also have no fallback email from the request body
+      if (!targetEmail) {
+        const isExpired = jwtErr?.name === "TokenExpiredError";
+        return NextResponse.json(
+          {
+            error: isExpired
+              ? "Verification code has expired. Please request a new one."
+              : "Invalid or expired verification code.",
+          },
+          { status: 400 }
+        );
       }
     }
 
@@ -56,30 +58,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Normalize email before any DB writes — matches how signup stores the email
+    // Normalize
     const cleanEmail = (targetEmail as string).trim().toLowerCase();
+    const cleanPassword = (newPassword as string).trim();
 
-    // Normalize password input before hashing — must match login's trim()
-    const cleanPassword = newPassword.trim();
-
-    // Hash new password using bcrypt (saltRounds = 10)
+    // Hash the new password
     const newPasswordHash = await bcrypt.hash(cleanPassword, 10);
 
-    // Update user password in Prisma database if present
+    // Update in Supabase PostgreSQL via Prisma — single source of truth
     try {
       await prisma.user.update({
         where: { email: cleanEmail },
         data: { passwordHash: newPasswordHash },
       });
-    } catch (prismaErr) {
-      console.warn("Prisma user update skipped/failed (fallback db will be updated):", prismaErr);
+    } catch (prismaErr: any) {
+      console.error("Prisma password update failed:", prismaErr);
+      // P2025 = record not found
+      if (prismaErr?.code === "P2025") {
+        return NextResponse.json(
+          { error: "No account found for this email address." },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Failed to update password. Please try again." },
+        { status: 500 }
+      );
     }
-
-    // Update user password in db.json fallback store
-    updateUserPassword(cleanEmail, newPasswordHash);
-
-    // Consume the token / OTP code
-    consumeResetToken(otpOrToken);
 
     return NextResponse.json({
       success: true,
@@ -87,6 +92,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     console.error("Reset password error:", err);
-    return NextResponse.json({ error: "Server error resetting password." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Server error resetting password." },
+      { status: 500 }
+    );
   }
 }

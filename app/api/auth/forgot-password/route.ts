@@ -6,7 +6,9 @@ const JWT_SECRET = process.env.NEXTAUTH_SECRET || "zenrunway-secret-key-2026";
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
+    const body = await req.json();
+    const rawEmail = body?.email || "";
+    const email = rawEmail.trim().toLowerCase();
 
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });

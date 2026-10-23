@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_COOKIE_NAME, verifyJwtToken } from "@/lib/auth";
-import { findUserByEmail } from "@/lib/db";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,15 +10,14 @@ export async function GET(req: NextRequest) {
     }
 
     const payload = verifyJwtToken(token);
-    if (!payload) {
+    if (!payload?.email) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
-    const user = findUserByEmail(payload.email) || (
-      payload.email.toLowerCase() === "admin@zenrunway.io"
-        ? { id: "usr-admin-1", email: "admin@zenrunway.io" }
-        : undefined
-    );
+    const user = await prisma.user.findUnique({
+      where: { email: payload.email.trim().toLowerCase() },
+    });
+
     if (!user) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
